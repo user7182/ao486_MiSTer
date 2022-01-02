@@ -603,7 +603,12 @@ reg dma_in_progress;
 always @(posedge clk) begin
 	if(rst_n == 1'b0)                           dma_in_progress <= 1'b0;
 	else if(sw_reset)                           dma_in_progress <= 1'b0;
+	// Upon receiving a new command any in progress activity is cleared. This fixes games
+	// that would freeze when a new sound is played before the active sound is finished.
+	else if(cmd_finish)                         dma_in_progress <= 1'b0;
+	// Otherwise a new start command will set the in progress flag true.
 	else if(dma_single_start || dma_auto_start) dma_in_progress <= 1'b1;
+	// And clear it when the entire sound has been played.
 	else if(dma_finished)                       dma_in_progress <= 1'b0;
 end
 
