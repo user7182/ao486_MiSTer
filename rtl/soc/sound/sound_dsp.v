@@ -637,9 +637,17 @@ reg dma_in_progress;
 always @(posedge clk) begin
 	if(rst_n == 1'b0)                           dma_in_progress <= 1'b0;
 	else if(sw_reset)                           dma_in_progress <= 1'b0;
-	// Upon receiving a new command any in progress activity is cleared. This fixes games
+	// Upon receiving a new time constant clear any in progress activity This fixes games
 	// that would freeze when a new sound is played before the active sound is finished.
-	else if(cmd_finish)                         dma_in_progress <= 1'b0;
+	//
+	// It was attempted to clear the in progress flag on a single start or auto start event however
+	// this always resulted in getting to the last byte (dma_left), then making a DMA request (dma_req) and 
+	// never receiving a DMA ack (dma_ack). Because the number of bytes never reached 0 bytes, 
+	// the game would hang waiting for an interrupt. Because the set time constant always comes
+	// before a new sound in Monkey Island the flag was cleared then. Clearing it earlier results in
+	// the correct number of bytes transfering. This doesn't feel like the correct solution, but it's not obvious
+	// why changing the timing of the fixes the problem.
+	else if(cmd_set_time_constant)              dma_in_progress <= 1'b0;
 	// Otherwise a new start command will set the in progress flag true.
 	else if(dma_single_start || dma_auto_start) dma_in_progress <= 1'b1;
 	// And clear it when the entire sound has been played.
