@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c 13073 2017-02-16 21:43:52Z vruppert $
+// $Id: rombios.c 14314 2021-07-14 16:10:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2017  The Bochs Project
+//  Copyright (C) 2001-2021  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -134,6 +134,7 @@
 // i440FX is emulated by Bochs and QEMU
 #define PCI_FIXED_HOST_BRIDGE 0x12378086  ;; i440FX PCI bridge
 #define PCI_FIXED_HOST_BRIDGE2 0x01228086 ;; i430FX PCI bridge
+#define PCI_FIXED_HOST_BRIDGE3 0x71908086 ;; i440BX PCI bridge
 
 // #20  is dec 20
 // #$20 is hex 20 = 32
@@ -182,7 +183,7 @@ MACRO HALT
   ;; However, users can choose to make panics non-fatal and continue.
 #if BX_VIRTUAL_PORTS
   mov dx,#PANIC_PORT
-  mov ax,#0x21 //ao #?1
+  mov ax,#0x21 // MiSTer: was ao #?1
   out dx,ax
 #else
   mov dx,#0x80
@@ -674,7 +675,7 @@ typedef struct {
 
   // for access to EBDA area
   //     The EBDA structure should conform to
-  //     http://www.frontiernet.net/~fys/rombios.htm document
+  //     http://www.fysnet.net/rombios.htm document
   //     I made the ata and cdemu structs begin at 0x121 in the EBDA seg
   // EBDA must be at most 768 bytes; it lives at EBDA_SEG, and the boot
   // device tables are at IPL_SEG
@@ -894,6 +895,9 @@ static void           nmi_handler_msg();
 static void           delay_ticks();
 static void           delay_ticks_and_check_for_keystroke();
 
+#ifdef BOCHS_ORIGINAL
+static void            interactive_bootkey();
+#endif // BOCHS_ORIGINAL
 static void           print_bios_banner();
 static void           print_boot_device();
 static void           print_boot_failure();
@@ -926,9 +930,9 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 13073 $ $Date: 2017-02-16 22:43:52 +0100 (Do, 16. Feb 2017) $";
+static char bios_svn_version_string[] = "$Revision: 14314 $ $Date: 2021-07-14 12:10:19 -0400 (Wed, 14 Jul 2021) $";
 
-#define BIOS_COPYRIGHT_STRING "(c) 2001-2017  The Bochs Project"
+#define BIOS_COPYRIGHT_STRING "(c) 2001-2021  The Bochs Project"
 
 #if DEBUG_ATA
 #  define BX_DEBUG_ATA(a...) BX_DEBUG(a)
@@ -1117,7 +1121,7 @@ ASM_START
   mov  bp, sp
 
     push dx
-    xor  al, al  // fix for stupid Win98 FDC I/O trap
+    xor  al, al  // MiSTer: fix for stupid Win98 FDC I/O trap
     mov  dx, 4[bp]
     in   al, dx
     pop  dx
@@ -1458,6 +1462,22 @@ ASM_START
 ASM_END
 }
 
+  Bit16u
+get_ebda_seg()
+{
+ASM_START
+  push bx
+  push ds
+  mov  ax, #0x0040
+  mov  ds, ax
+  mov  bx, #0x000e
+  mov  ax, [bx]
+  ;; ax = return value (word)
+  pop  ds
+  pop  bx
+ASM_END
+}
+
 #if BX_DEBUG_SERIAL
 /* serial debug port*/
 #define BX_DEBUG_PORT 0x03f8
@@ -1537,12 +1557,8 @@ send(action, c)
   uart_tx_byte(BX_DEBUG_PORT, c);
 #endif
 #if BX_VIRTUAL_PORTS
-  if((action & BIOS_PRINTF_DEBUG) || (action & BIOS_PRINTF_INFO) || (action & BIOS_PRINTF_SCREEN)) {
-    while(inw(DEBUG_PORT+6) == 0) { ; }
-  }
-  if (action & BIOS_PRINTF_DEBUG)  outb(DEBUG_PORT, c);
-  if (action & BIOS_PRINTF_INFO)   outb(INFO_PORT, c);
-  if (action & BIOS_PRINTF_SCREEN) outb(INFO_PORT, c);
+  if (action & BIOS_PRINTF_DEBUG) outb(DEBUG_PORT, c);
+  if (action & BIOS_PRINTF_INFO) outb(INFO_PORT, c);
 #endif
   if (action & BIOS_PRINTF_SCREEN) {
     if (c == '\n') wrch('\r');
@@ -1707,7 +1723,7 @@ bios_printf(action, s)
 
   if ((action & BIOS_PRINTF_DEBHALT) == BIOS_PRINTF_DEBHALT) {
 #if BX_VIRTUAL_PORTS
-    outb(PANIC_PORT2, '&'); //ao 0x00
+    outb(PANIC_PORT2, '&'); // MiSTer: was ao 0x00
 #endif
     bios_printf (BIOS_PRINTF_SCREEN, "FATAL: ");
   }
@@ -1823,7 +1839,8 @@ keyboard_init()
             max = 0x2000;
         }
     }
-	 
+
+#ifndef BOCHS_ORIGINAL  // MiSTer
     // Write Keyboard Mode
     outb(PORT_PS2_STATUS, 0x60);
 
@@ -1844,69 +1861,77 @@ keyboard_init()
     // cause a panic a few lines below.  See sourceforge bug report :
     // [ 642031 ] FATAL: Keyboard RESET error:993
 
-	 /*
-    // ------------------- controller side ----------------------
-    // send cmd = 0xAA, self test 8042
+#else
+    /* ------------------- controller side ----------------------*/
+    /* send cmd = 0xAA, self test 8042 */
     outb(PORT_PS2_STATUS, 0xaa);
 
-    // Wait until buffer is empty
+    /* Wait until buffer is empty */
     max=0xffff;
     while ( (inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x00);
     if (max==0x0) keyboard_panic(00);
 
-    // Wait for data
+    /* Wait for data */
     max=0xffff;
     while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x01);
     if (max==0x0) keyboard_panic(01);
 
-    // read self-test result, 0x55 should be returned from 0x60
+    /* read self-test result, 0x55 should be returned from 0x60 */
     if ((inb(PORT_PS2_DATA) != 0x55)){
         keyboard_panic(991);
     }
 
-    // send cmd = 0xAB, keyboard interface test
+    /* send cmd = 0xAB, keyboard interface test */
     outb(PORT_PS2_STATUS,0xab);
 
-    // Wait until buffer is empty 
+    /* Wait until buffer is empty */
     max=0xffff;
     while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x10);
     if (max==0x0) keyboard_panic(10);
 
-    // Wait for data
+    /* Wait for data */
     max=0xffff;
     while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x11);
     if (max==0x0) keyboard_panic(11);
 
-    // read keyboard interface test result,
-    // 0x00 should be returned form 0x60
+    /* read keyboard interface test result, */
+    /* 0x00 should be returned form 0x60 */
     if ((inb(PORT_PS2_DATA) != 0x00)) {
         keyboard_panic(992);
     }
 
-    // Enable Keyboard clock
+    /* Enable Keyboard clock */
     outb(PORT_PS2_STATUS,0xae);
+    /* Wait until buffer is empty */
+    max=0xffff;
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x10);
+    if (max==0x0) keyboard_panic(10);
     outb(PORT_PS2_STATUS,0xa8);
+    /* Wait until buffer is empty */
+    max=0xffff;
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x10);
+    if (max==0x0) keyboard_panic(10);
 
-    // ------------------- keyboard side ------------------------
-    // reset keyboard and self test  (keyboard side)
+    /* ------------------- keyboard side ------------------------*/
+    /* reset keyboard and self test  (keyboard side) */
     outb(PORT_PS2_DATA, 0xff);
 
-    // Wait until buffer is empty
+    /* Wait until buffer is empty */
     max=0xffff;
     while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x20);
     if (max==0x0) keyboard_panic(20);
 
-    // Wait for data
+    /* Wait for data */
     max=0xffff;
     while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x21);
     if (max==0x0) keyboard_panic(21);
 
-    // keyboard should return ACK
+    /* keyboard should return ACK */
     if ((inb(PORT_PS2_DATA) != 0xfa)) {
         keyboard_panic(993);
     }
 
-    // Wait for data
+    /* Wait for data */
     max=0xffff;
     while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x31);
     if (max==0x0) keyboard_panic(31);
@@ -1915,58 +1940,58 @@ keyboard_init()
         keyboard_panic(994);
     }
 
-    // Disable keyboard
+    /* Disable keyboard */
     outb(PORT_PS2_DATA, 0xf5);
 
-    // Wait until buffer is empty
+    /* Wait until buffer is empty */
     max=0xffff;
     while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x40);
     if (max==0x0) keyboard_panic(40);
 
-    // Wait for data
+    /* Wait for data */
     max=0xffff;
     while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x41);
     if (max==0x0) keyboard_panic(41);
 
-    // keyboard should return ACK
+    /* keyboard should return ACK */
     if ((inb(PORT_PS2_DATA) != 0xfa)) {
         keyboard_panic(995);
     }
 
-    // Write Keyboard Mode
+    /* Write Keyboard Mode */
     outb(PORT_PS2_STATUS, 0x60);
 
-    // Wait until buffer is empty
+    /* Wait until buffer is empty */
     max=0xffff;
     while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x50);
     if (max==0x0) keyboard_panic(50);
 
-    /* send cmd: scan code convert, disable mouse, enable IRQ 1
+    /* send cmd: scan code convert, disable mouse, enable IRQ 1 */
     outb(PORT_PS2_DATA, 0x61);
 
-    // Wait until buffer is empty
+    /* Wait until buffer is empty */
     max=0xffff;
     while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x60);
     if (max==0x0) keyboard_panic(60);
 
-    // Enable keyboard
+    /* Enable keyboard */
     outb(PORT_PS2_DATA, 0xf4);
 
-    // Wait until buffer is empty
+    /* Wait until buffer is empty */
     max=0xffff;
     while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x70);
     if (max==0x0) keyboard_panic(70);
 
-    // Wait for data
+    /* Wait for data */
     max=0xffff;
     while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x71);
     if (max==0x0) keyboard_panic(70);
 
-    // keyboard should return ACK
+    /* keyboard should return ACK */
     if ((inb(PORT_PS2_DATA) != 0xfa)) {
         keyboard_panic(996);
     }
-	 */
+#endif // BOCHS_ORIGINAL
 
     outb(PORT_DIAG, 0x77);
 }
@@ -2007,8 +2032,8 @@ void s3_resume_panic()
 void
 print_bios_banner()
 {
-  printf(BX_APPNAME" BIOS - build: %s  Options: ",
-    BIOS_BUILD_DATE);
+  printf(BX_APPNAME" BIOS - build: %s\n%s\nOptions: ",
+    BIOS_BUILD_DATE, bios_svn_version_string);
   printf(
 #if BX_APM
   "apmbios "
@@ -2101,7 +2126,85 @@ Bit16u i; ipl_entry_t *e;
   memcpyb(ss, e, IPL_SEG, IPL_TABLE_OFFSET + i * sizeof (*e), sizeof (*e));
   return 1;
 }
+#ifdef BOCHS_ORIGINAL
+#if BX_ELTORITO_BOOT
+  void
+interactive_bootkey()
+{
+  ipl_entry_t e;
+  Bit16u count;
+  char description[33];
+  Bit8u scan_code;
+  Bit8u i;
+  Bit16u ss = get_SS();
+  Bit16u valid_choice = 0;
 
+  while (check_for_keystroke())
+    get_keystroke();
+
+  if ((inb_cmos(0x3f) & 0x01) == 0x01) /* check for 'fastboot' option */
+    return;
+
+  printf("Press F12 for boot menu.\n\n");
+
+  delay_ticks_and_check_for_keystroke(11, 5); /* ~3 seconds */
+  if (check_for_keystroke())
+  {
+    scan_code = get_keystroke();
+    if (scan_code == 0x86) /* F12 */
+    {
+      while (check_for_keystroke())
+        get_keystroke();
+
+      printf("Select boot device:\n\n");
+
+      count = read_word(IPL_SEG, IPL_COUNT_OFFSET);
+      for (i = 0; i < count; i++)
+      {
+        memcpyb(ss, &e, IPL_SEG, IPL_TABLE_OFFSET + i * sizeof (e), sizeof (e));
+        printf("%d. ", i+1);
+        switch(e.type)
+        {
+          case IPL_TYPE_FLOPPY:
+          case IPL_TYPE_HARDDISK:
+          case IPL_TYPE_CDROM:
+            printf("%s\n", drivetypes[e.type]);
+            break;
+          case IPL_TYPE_BEV:
+            printf("%s", drivetypes[4]);
+            if (e.description != 0)
+            {
+              memcpyb(ss, &description, HIWORD(e.description), LOWORD(e.description), 32);
+              description[32] = 0;
+              printf(" [%S]", ss, description);
+           }
+           printf("\n");
+           break;
+        }
+      }
+
+      count++;
+      while (!valid_choice) {
+        scan_code = get_keystroke();
+        if (scan_code == 0x01 || scan_code == 0x58) /* ESC or F12 */
+        {
+          valid_choice = 1;
+        }
+        else if (scan_code <= count)
+        {
+          valid_choice = 1;
+          scan_code -= 1;
+          /* Set user selected device */
+          write_word(IPL_SEG, IPL_BOOTFIRST_OFFSET, scan_code);
+        }
+      }
+
+      printf("\n");
+    }
+  }
+}
+#endif // BX_ELTORITO_BOOT
+#endif // BOCHS_ORIGINAL
 //--------------------------------------------------------------------------
 // print_boot_device
 //   displays the boot device
@@ -2182,7 +2285,7 @@ log_bios_start()
 #if BX_DEBUG_SERIAL
   outb(BX_DEBUG_PORT+UART_LCR, 0x03); /* setup for serial logging: 8N1 */
 #endif
-  BX_INFO("%s\n", bios_cvs_version_string);
+  BX_INFO("%s\n", bios_svn_version_string);
 }
 
   bx_bool
@@ -2398,7 +2501,7 @@ void ata_init( )
 {
   Bit8u  channel, device;
   // Set DS to EBDA segment.
-  Bit16u old_ds = set_DS(read_word(0x0040,0x000E));
+  Bit16u old_ds = set_DS(get_ebda_seg());
 
   // Channels info init.
   for (channel=0; channel<BX_MAX_ATA_INTERFACES; channel++) {
@@ -2476,17 +2579,17 @@ static int await_ide(when_done,base,timeout)
       result = 0;
 
     if (result) return 0;
-    if (time >> 8 != last) // mod 2048 each 16 ms
+    if (HIWORD(time) != last) // mod 2048 each 16 ms
     {
-      last = time >> 8;
-      BX_DEBUG_ATA("await_ide: (TIMEOUT,BSY,!BSY,!BSY_DRQ,!BSY_!DRQ,!BSY_RDY) %d time= %ld timeout= %d, status= %x\n",when_done,time>>3, timeout, status);	  
+      last = HIWORD(time);
+      BX_DEBUG_ATA("await_ide: (TIMEOUT,BSY,!BSY,!BSY_DRQ,!BSY_!DRQ,!BSY_RDY) %d time= %ld timeout= %d\n",when_done,time>>11, timeout);
     }
     if (status & ATA_CB_STAT_ERR)
     {
-      BX_DEBUG_ATA("await_ide: ERROR (TIMEOUT,BSY,!BSY,!BSY_DRQ,!BSY_!DRQ,!BSY_RDY) %d time= %ld timeout= %d\n",when_done,time>>3, timeout);
+      BX_DEBUG_ATA("await_ide: ERROR (TIMEOUT,BSY,!BSY,!BSY_DRQ,!BSY_!DRQ,!BSY_RDY) %d time= %ld timeout= %d\n",when_done,time>>11, timeout);
       return -1;
     }
-    if ((timeout == 0) || ((time>>3) > timeout)) break;
+    if ((timeout == 0) || ((time>>11) > timeout)) break;
   }
   BX_INFO("IDE time out\n");
   return -1;
@@ -2501,7 +2604,7 @@ void ata_detect( )
   Bit8u  hdcount, cdcount, device, type;
   Bit8u  buffer[0x0200];
   // Set DS to EBDA segment.
-  Bit16u old_ds = set_DS(read_word(0x0040,0x000E));
+  Bit16u old_ds = set_DS(get_ebda_seg());
 
 #if BX_MAX_ATA_INTERFACES > 0
   write_byte_DS(&EbdaData->ata.channels[0].iface,ATA_IFACE_ISA);
@@ -2535,7 +2638,7 @@ void ata_detect( )
   hdcount=cdcount=0;
 
   for(device=0; device<BX_MAX_ATA_DEVICES; device++) {
-    Bit16u iobase1, iobase2;
+    Bit16u iobase1, iobase2, blksize;
     Bit8u  channel, slave, shift;
     Bit8u  sc, sn, cl, ch, st;
 
@@ -2591,7 +2694,7 @@ void ata_detect( )
     // Now we send a IDENTIFY command to ATA device
     if(type == ATA_TYPE_ATA) {
       Bit32u sectors_low, sectors_high;
-      Bit16u cylinders, heads, spt, blksize;
+      Bit16u cylinders, heads, spt;
       Bit8u  translation, removable, mode;
 
       //Temporary values to do the transfer
@@ -2699,7 +2802,6 @@ void ata_detect( )
     if(type == ATA_TYPE_ATAPI) {
 
       Bit8u  type, removable, mode;
-      Bit16u blksize;
 
       //Temporary values to do the transfer
       write_byte_DS(&EbdaData->ata.devices[device].device,ATA_DEVICE_CDROM);
@@ -2726,12 +2828,26 @@ void ata_detect( )
     {
       Bit32u sizeinmb;
       Bit16u ataversion;
-      Bit8u  c, i, version, model[41];
+      Bit8u  c, i, lshift, rshift, version, model[41];
 
       switch (type) {
         case ATA_TYPE_ATA:
-          sizeinmb = (read_dword_DS(&EbdaData->ata.devices[device].sectors_high) << 21)
-            | (read_dword_DS(&EbdaData->ata.devices[device].sectors_low) >> 11);
+          // Ben: be sides, this trick doesn't work an very large disks...
+          switch (blksize) {
+            case 1024:
+              lshift = 22;
+              rshift = 10;
+              break;
+            case 4096:
+              lshift = 24;
+              rshift = 8;
+              break;
+            default:
+              lshift = 21;
+              rshift = 11;
+          }
+          sizeinmb = (read_dword_DS(&EbdaData->ata.devices[device].sectors_high) << lshift)
+            | (read_dword_DS(&EbdaData->ata.devices[device].sectors_low) >> rshift);
         case ATA_TYPE_ATAPI:
           // Read ATA/ATAPI version
           ataversion=((Bit16u)(read_byte_SS(buffer+161))<<8)|read_byte_SS(buffer+160);
@@ -2764,6 +2880,28 @@ void ata_detect( )
 
       switch (type) {
         case ATA_TYPE_ATA:
+#if 1  // Using Bochs Original
+          printf("ata%d %s: ",channel,slave?" slave":"master");
+          i=0;
+          while(c=read_byte_SS(model+i++))
+            printf("%c",c);
+          if (sizeinmb < (1UL<<16))
+            printf(" ATA-%d Hard-Disk (%4u MBytes)\n", version, (Bit16u)sizeinmb);
+          else
+            printf(" ATA-%d Hard-Disk (%4u GBytes)\n", version, (Bit16u)(sizeinmb>>10));
+          break;
+        case ATA_TYPE_ATAPI:
+          printf("ata%d %s: ",channel,slave?" slave":"master");
+          i=0; while(c=read_byte_SS(model+i++)) printf("%c",c);
+          if(read_byte_DS(&EbdaData->ata.devices[device].device)==ATA_DEVICE_CDROM)
+            printf(" ATAPI-%d CD-Rom/DVD-Rom\n",version);
+          else
+            printf(" ATAPI-%d Device\n",version);
+          break;		  		  
+        case ATA_TYPE_UNKNOWN:
+          printf("ata%d %s: Unknown device\n",channel,slave?" slave":"master");
+          break;
+#else
           if(sizeinmb)
           {
              printf("IDE%d %s: ",channel,slave?" slave":"master");
@@ -2790,6 +2928,7 @@ void ata_detect( )
         case ATA_TYPE_UNKNOWN:
           printf("IDE%d %s: Unknown device\n",channel,slave?" slave":"master");
           break;
+#endif // BOCHS_ORIGINAL
       }
     }
   }
@@ -2905,7 +3044,16 @@ Bit32u lba_low, lba_high;
   iobase1 = read_word_DS(&EbdaData->ata.channels[channel].iobase1);
   iobase2 = read_word_DS(&EbdaData->ata.channels[channel].iobase2);
   mode    = read_byte_DS(&EbdaData->ata.devices[device].mode);
-  blksize = 0x200; // was = read_word_DS(&EbdaData->ata.devices[device].blksize);
+#ifdef BOCHS_ORIGINAL  
+  if ((command == ATA_CMD_IDENTIFY_DEVICE) ||
+      (command == ATA_CMD_IDENTIFY_DEVICE_PACKET)) {
+    blksize = 0x200;
+  } else {
+    blksize = read_word_DS(&EbdaData->ata.devices[device].blksize);
+  }
+#else
+    blksize = 0x200; 
+#endif // BOCHS_ORIGINAL
   if (mode == ATA_MODE_PIO32) blksize>>=2;
   else blksize>>=1;
 
@@ -3052,10 +3200,11 @@ ASM_END
     current++;
     write_word_DS(&EbdaData->ata.trsfsectors,current);
     count--;
-//AO modification start
-//modif    if(ioflag == 0) await_ide(NOT_BSY, iobase1, IDE_TIMEOUT);
+#ifdef BOCHS_ORIGINAL
+    if(ioflag == 0) await_ide(NOT_BSY, iobase1, IDE_TIMEOUT);
+#else
     await_ide(NOT_BSY, iobase1, IDE_TIMEOUT);
-//AO modification end
+#endif // BOCHS_ORIGINAL
     status = inb(iobase1 + ATA_CB_STAT);
     if(ioflag == 0)
     {
@@ -3116,7 +3265,7 @@ Bit16u device,cmdseg, cmdoff, bufseg, bufoff;
 Bit16u header;
 Bit32u length;
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E), old_ds;
+  Bit16u ebda_seg=get_ebda_seg(), old_ds;
   Bit16u iobase1, iobase2;
   Bit16u lcount, lbefore, lafter, count;
   Bit8u  channel, slave;
@@ -3138,7 +3287,7 @@ Bit32u length;
     return 1;
   }
 
-	// Set DS to EBDA segment.
+  // Set DS to EBDA segment.
   old_ds = set_DS(ebda_seg);
   iobase1 = read_word_DS(&EbdaData->ata.channels[channel].iobase1);
   iobase2 = read_word_DS(&EbdaData->ata.channels[channel].iobase2);
@@ -3149,7 +3298,7 @@ Bit32u length;
   if (cmdlen > 12) cmdlen=16;
   cmdlen>>=1;
 
-	// Reset count of transferred data
+  // Reset count of transferred data
   write_word_DS(&EbdaData->ata.trsfsectors,0);
   write_dword_DS(&EbdaData->ata.trsfbytes,0L);
 
@@ -3171,7 +3320,7 @@ Bit32u length;
   // Device should ok to receive command
   await_ide(NOT_BSY_DRQ, iobase1, IDE_TIMEOUT);
   status = inb(iobase1 + ATA_CB_STAT);
-	
+
   if (status & ATA_CB_STAT_ERR) {
     BX_DEBUG_ATA("ata_cmd_packet : error, status is %02x\n",status);
     return 3;
@@ -3427,7 +3576,7 @@ atapi_is_ready(device)
   Bit32u time;
   Bit8u asc, ascq;
   Bit8u in_progress;
-  Bit16u ebda_seg = read_word(0x0040,0x000E);
+  Bit16u ebda_seg = get_ebda_seg();
   if (read_byte(ebda_seg,&EbdaData->ata.devices[device].type) != ATA_TYPE_ATAPI) {
     printf("not implemented for non-ATAPI device\n");
     return -1;
@@ -3498,7 +3647,7 @@ ok:
 atapi_is_cdrom(device)
   Bit8u device;
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
 
   if (device >= BX_MAX_ATA_DEVICES)
     return 0;
@@ -3527,7 +3676,7 @@ atapi_is_cdrom(device)
   void
 cdemu_init()
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
 
   // the only important data is this one for now
   write_byte(ebda_seg,&EbdaData->cdemu.active,0x00);
@@ -3536,7 +3685,7 @@ cdemu_init()
   Bit8u
 cdemu_isactive()
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
 
   return(read_byte(ebda_seg,&EbdaData->cdemu.active));
 }
@@ -3544,7 +3693,7 @@ cdemu_isactive()
   Bit8u
 cdemu_emulated_drive()
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
 
   return(read_byte(ebda_seg,&EbdaData->cdemu.emulated_drive));
 }
@@ -3557,7 +3706,7 @@ static char eltorito[24]="EL TORITO SPECIFICATION";
   Bit16u
 cdrom_boot()
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E), old_ds;
+  Bit16u ebda_seg=get_ebda_seg(), old_ds;
   Bit8u  atacmd[12], buffer[2048];
   Bit32u lba;
   Bit16u boot_segment, nbsectors, i, error;
@@ -3796,7 +3945,7 @@ int15_function(regs, ES, DS, FLAGS)
   pusha_regs_t regs; // REGS pushed via pusha
   Bit16u ES, DS, FLAGS;
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
   bx_bool prev_a20_enable;
   Bit16u  base15_00;
   Bit8u   base23_16;
@@ -3848,20 +3997,6 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
     case 0x52:    // removable media eject
       CLEAR_CF();
       regs.u.r8.ah = 0;  // "ok ejection may proceed"
-      break;
-
-    case 0x80:
-      /* Device open */
-    case 0x81:
-      /* Device close */
-    case 0x82:
-      /* Program termination */
-    case 0x90:
-      /* Device busy interrupt. Called by Int 16h when no key available */
-    case 0x91:
-      /* Interrupt complete. Called by IRQ handlers */
-      CLEAR_CF();
-      regs.u.r8.ah = 0;  // "operation success"
       break;
 
     case 0x83: {
@@ -4196,7 +4331,7 @@ int15_function_mouse(regs, ES, DS, FLAGS)
   pusha_regs_t regs; // REGS pushed via pusha
   Bit16u ES, DS, FLAGS;
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
   Bit8u  mouse_flags_1, mouse_flags_2;
   Bit16u mouse_driver_seg;
   Bit16u mouse_driver_offset;
@@ -4225,9 +4360,28 @@ BX_DEBUG_INT15("case 0:\n");
             case 0: // Disable Mouse
 BX_DEBUG_INT15("case 0: disable mouse\n");
               inhibit_mouse_int_and_events(); // disable IRQ12 and packets
+
+#ifdef BOCHS_ORIGINAL	 
+              ret = send_to_mouse_ctrl(0xF5); // disable mouse command
+              if (ret == 0) {
+                ret = get_mouse_data(&mouse_data1);
+                if ( (ret == 0) || (mouse_data1 == 0xFA) ) {
+                  CLEAR_CF();
+                  regs.u.r8.ah = 0;
+                  return;
+                }
+              }
+
+              // error
+              SET_CF();
+              regs.u.r8.ah = ret;
+              return;
+              break;
+#else
               CLEAR_CF();
               regs.u.r8.ah = 0;
               return;
+#endif // BOCHS_ORIGINAL
 
             case 1: // Enable Mouse
 BX_DEBUG_INT15("case 1: enable mouse\n");
@@ -4278,10 +4432,43 @@ BX_DEBUG_INT15("case 1 or 5:\n");
           }
 
           inhibit_mouse_int_and_events(); // disable IRQ12 and packets
+#ifdef BOCHS_ORIGINAL // MiSTer		  
+          ret = send_to_mouse_ctrl(0xFF); // reset mouse command
+          if (ret == 0) {
+            ret = get_mouse_data(&mouse_data3);
+            // if no mouse attached, it will return RESEND
+            if (mouse_data3 == 0xfe) {
+              SET_CF();
+              return;
+            }
+            if (mouse_data3 != 0xfa)
+              BX_PANIC("Mouse reset returned %02x (should be ack)\n", (unsigned)mouse_data3);
+            if ( ret == 0 ) {
+              ret = get_mouse_data(&mouse_data1);
+              if ( ret == 0 ) {
+                ret = get_mouse_data(&mouse_data2);
+                if ( ret == 0 ) {
+                  // turn IRQ12 and packet generation on
+                  enable_mouse_int_and_events();
+                  CLEAR_CF();
+                  regs.u.r8.ah = 0;
+                  regs.u.r8.bl = mouse_data1;
+                  regs.u.r8.bh = mouse_data2;
+                  return;
+                }
+              }
+            }
+          }
+
+          // error
+          SET_CF();
+          regs.u.r8.ah = ret;
+#else
           CLEAR_CF();
           regs.u.r8.ah = 0;
           regs.u.r8.bl = 0xAA;
           regs.u.r8.bh = 0;
+#endif // BOCHS_ORIGINAL		  
           return;
 
         case 2: // Set Sample Rate
@@ -4325,7 +4512,7 @@ BX_DEBUG_INT15("case 3:\n");
           //      3 = 200 dpi, 8 counts per millimeter
           comm_byte = inhibit_mouse_int_and_events(); // disable IRQ12 and packets
           if (regs.u.r8.bh < 4) {
-				 /*
+#ifdef BOCHS_ORIGINAL		  
             ret = send_to_mouse_ctrl(0xE8); // set resolution command
             if (ret == 0) {
               ret = get_mouse_data(&mouse_data1);
@@ -4342,9 +4529,10 @@ BX_DEBUG_INT15("case 3:\n");
               SET_CF();
               regs.u.r8.ah = UNSUPPORTED_FUNCTION;
             }
-				*/
+#else
             CLEAR_CF();
             regs.u.r8.ah = 0;
+#endif // BOCHS_ORIGINAL			
           } else {
             // error
             SET_CF();
@@ -4374,11 +4562,44 @@ BX_DEBUG_INT15("case 4:\n");
 BX_DEBUG_INT15("case 6:\n");
           switch (regs.u.r8.bh) {
             case 0: // Return Status
+#ifdef BOCHS_ORIGINAL			
+              comm_byte = inhibit_mouse_int_and_events(); // disable IRQ12 and packets
+              ret = send_to_mouse_ctrl(0xE9); // get mouse info command
+              if (ret == 0) {
+                ret = get_mouse_data(&mouse_data1);
+                if (mouse_data1 != 0xfa)
+                  BX_PANIC("Mouse status returned %02x (should be ack)\n", (unsigned)mouse_data1);
+                if (ret == 0) {
+                  ret = get_mouse_data(&mouse_data1);
+                  if (ret == 0) {
+                    ret = get_mouse_data(&mouse_data2);
+                    if (ret == 0) {
+                      ret = get_mouse_data(&mouse_data3);
+                      if (ret == 0) {
+                        CLEAR_CF();
+                        regs.u.r8.ah = 0;
+                        regs.u.r8.bl = mouse_data1;
+                        regs.u.r8.cl = mouse_data2;
+                        regs.u.r8.dl = mouse_data3;
+                        set_kbd_command_byte(comm_byte); // restore IRQ12 and serial enable
+                        return;
+                      }
+                    }
+                  }
+                }
+              }
+
+              // error
+              SET_CF();
+              regs.u.r8.ah = ret;
+              set_kbd_command_byte(comm_byte); // restore IRQ12 and serial enable
+#else
               CLEAR_CF();
               regs.u.r8.ah = 0;
               regs.u.r8.bl = 0;
               regs.u.r8.cl = 0;
               regs.u.r8.dl = 0;
+#endif // BOCHS_ORIGINAL
               return;
 
             case 1: // Set Scaling Factor to 1:1
@@ -4566,14 +4787,14 @@ ASM_END
                         break;
                     case 1:
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x0009f000L, 0x000d0000L, 0, 0, E820_RESERVED);
+                                       0x0009f000L, 0x000d0000L, 0, 0, E820_RESERVED);  // MiSTer
                         regs.u.r32.ebx = 2;
                         break;
                     case 2:
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x000f0000L, 0x00100000L, 0, 0, E820_RESERVED);
+                                       0x000f0000L, 0x00100000L, 0, 0, E820_RESERVED);  // MiSTer
                         if (extended_memory_size <= 0x100000)
-                            regs.u.r32.ebx = 0;
+                            regs.u.r32.ebx = 0;	// MiSTer
                         else
                             regs.u.r32.ebx = 3;
                         break;
@@ -4594,7 +4815,7 @@ ASM_END
                         set_e820_range(ES, regs.u.r16.di,
                                        0x00100000L,
                                        extended_memory_size, 0, 0, E820_RAM);
-                        regs.u.r32.ebx = 0;
+                        regs.u.r32.ebx = 0;	// MiSTer
 #endif
                         break;
                     case 4:
@@ -4607,6 +4828,22 @@ ASM_END
                         set_e820_range(ES, regs.u.r16.di,
                                        extended_memory_size - ACPI_DATA_SIZE,
                                        extended_memory_size, 0, 0, E820_ACPI);
+                        regs.u.r32.ebx = 6;
+                        break;
+                    case 6:
+                        /* 256KB BIOS area at the end of 4 GB */
+                        set_e820_range(ES, regs.u.r16.di,
+                                       0xfffc0000L, 0x00000000L, 0, 0, E820_RESERVED);
+                        if (extra_highbits_memory_size || extra_lowbits_memory_size)
+                            regs.u.r32.ebx = 7;
+                        else
+                            regs.u.r32.ebx = 0;
+                        break;
+                    case 7:
+                        /* Mapping of memory above 4 GB */
+                        set_e820_range(ES, regs.u.r16.di, 0x00000000L,
+                            extra_lowbits_memory_size, 1, extra_highbits_memory_size
+                                       + 1, E820_RAM);
                         regs.u.r32.ebx = 0;
                         break;
                     default:  /* AX=E820, DX=534D4150, BX unrecognized */
@@ -4702,12 +4939,16 @@ ASM_END
   switch (GET_AH()) {
     case 0x00: /* read keyboard input */
 
-      if ( !dequeue_key(&scan_code, &ascii_code, 1) )
-      {
-        AX = 0;
+      if ( !dequeue_key(&scan_code, &ascii_code, 1) ) 
+	  {
+#ifndef BOCHS_ORIGINAL
+        // MiSTer: don't hang on errors
+	    AX = 0;
         SET_ZF();
         return;
-        //BX_PANIC("KBD: int16h: out of keyboard input\n");
+#else		
+        BX_PANIC("KBD: int16h: out of keyboard input\n"); 
+#endif // BOCHS_ORIGINAL		
       }
       if (scan_code !=0 && ascii_code == 0xF0) ascii_code = 0;
       else if (ascii_code == 0xE0) ascii_code = 0;
@@ -4777,12 +5018,16 @@ ASM_END
 
     case 0x10: /* read MF-II keyboard input */
 
-      if ( !dequeue_key(&scan_code, &ascii_code, 1) )
-		{
+      if ( !dequeue_key(&scan_code, &ascii_code, 1) ) 
+	  {
+#ifndef BOCHS_ORIGINAL
+        // MiSTer: don't hang on errors
         AX = 0;
         SET_ZF();
-        return;
-        //BX_PANIC("KBD: int16h: out of keyboard input\n");
+        return;		
+#else		
+        BX_PANIC("KBD: int16h: out of keyboard input\n");
+#endif // BOCHS_ORIGINAL		
       }
       if (scan_code !=0 && ascii_code == 0xF0) ascii_code = 0;
       AX = (scan_code << 8) | ascii_code;
@@ -4868,16 +5113,18 @@ inhibit_mouse_int_and_events()
   Bit8u command_byte, prev_command_byte;
 
   // Turn off IRQ generation and aux data line
-  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);
-  if ( inb(PORT_PS2_STATUS) & 0x02 ) BX_PANIC(panic_msg_keyb_buffer_full,"inhibmouse1");
+  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);  // MiSTer  
+  if ( inb(PORT_PS2_STATUS) & 0x02 )
+    BX_PANIC(panic_msg_keyb_buffer_full,"inhibmouse");
   outb(PORT_PS2_STATUS, 0x20); // get command byte
   while ( (inb(PORT_PS2_STATUS) & 0x01) != 0x01 );
   prev_command_byte = inb(PORT_PS2_DATA);
   command_byte = prev_command_byte;
   //while ( (inb(PORT_PS2_STATUS) & 0x02) );
-  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);
+
+  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);  // MiSTer
   if ( inb(PORT_PS2_STATUS) & 0x02 )
-    BX_PANIC(panic_msg_keyb_buffer_full,"inhibmouse2");
+    BX_PANIC(panic_msg_keyb_buffer_full,"inhibmouse");
   command_byte &= 0xfd; // turn off IRQ 12 generation
   command_byte |= 0x20; // disable mouse serial clock line
   outb(PORT_PS2_STATUS, 0x60); // write command byte
@@ -4891,14 +5138,15 @@ enable_mouse_int_and_events()
   Bit8u command_byte;
 
   // Turn on IRQ generation and aux data line
-  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);
+
+  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);  // MiSTer
   if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"enabmouse");
   outb(PORT_PS2_STATUS, 0x20); // get command byte
   while ( (inb(PORT_PS2_STATUS) & 0x01) != 0x01 );
   command_byte = inb(PORT_PS2_DATA);
   //while ( (inb(PORT_PS2_STATUS) & 0x02) );
-  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);
+  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);  // MiSTer
   if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"enabmouse");
   command_byte |= 0x02; // turn on IRQ 12 generation
@@ -4914,7 +5162,7 @@ send_to_mouse_ctrl(sendbyte)
   Bit8u response;
 
   // wait for chance to write to ctrl
-  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);
+  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);  // MiSTer
   if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"sendmouse");
   outb(PORT_PS2_STATUS, 0xD4);
@@ -4941,9 +5189,12 @@ get_mouse_data(data)
 set_kbd_command_byte(command_byte)
   Bit8u command_byte;
 {
-  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);
+  while ( inb(PORT_PS2_STATUS) & 0x02 ) delay_ticks(2);  // MiSTer
   if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"setkbdcomm");
+#ifdef BOCHS_ORIGINAL
+  outb(PORT_PS2_STATUS, 0xD4);
+#endif // BOCHS_ORIGINAL
   outb(PORT_PS2_STATUS, 0x60); // write command byte
   outb(PORT_PS2_DATA, command_byte);
 }
@@ -4963,7 +5214,9 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
   scancode = GET_AL();
 
   if (scancode == 0) {
-    //BX_INFO("KBD: int09 handler: AL=0\n");
+#ifdef BOCHS_ORIGINAL  
+    BX_INFO("KBD: int09 handler: AL=0\n");
+#endif // BOCHS_ORIGINAL	
     return;
   }
 
@@ -5106,7 +5359,9 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
         break; /* toss key releases ... */
       }
       if (scancode > MAX_SCAN_CODE) {
-        //BX_INFO("KBD: int09h_handler(): unknown scancode read: 0x%02x!\n", scancode);
+#ifdef BOCHS_ORIGINAL	  
+        BX_INFO("KBD: int09h_handler(): unknown scancode read: 0x%02x!\n", scancode);
+#endif // BOCHS_ORIGINAL		
         return;
       }
       if (scancode == 0x53) { /* DEL */
@@ -5161,8 +5416,11 @@ ASM_END
 
       set_DS(0x40);
       if (scancode==0 && asciicode==0) {
-        //BX_INFO("KBD: int09h_handler(): scancode & asciicode are zero?\n");
-		  return;
+#ifdef BOCHS_ORIGINAL	  
+        BX_INFO("KBD: int09h_handler(): scancode & asciicode are zero?\n");
+#else
+		return;
+#endif // BOCHS_ORIGINAL
       }
       enqueue_key(scancode, asciicode);
       break;
@@ -5273,7 +5531,7 @@ int13_edd(DS, SI, device)
 {
   Bit32u lba_low, lba_high;
   Bit16u npc, nph, npspt, size, t13;
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
 
   //
   // DS has been set to EBDA segment before call
@@ -6007,7 +6265,7 @@ int13_success_noah:
 int13_eltorito(DS, ES, DI, SI, BP, SP, BX, DX, CX, AX, IP, CS, FLAGS)
   Bit16u DS, ES, DI, SI, BP, SP, BX, DX, CX, AX, IP, CS, FLAGS;
 {
-  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit16u ebda_seg=get_ebda_seg();
 
   BX_DEBUG_INT13_ET("int13_eltorito: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
   // BX_DEBUG_INT13_ET("int13_eltorito: SS=%04x DS=%04x ES=%04x DI=%04x SI=%04x\n",get_SS(), DS, ES, DI, SI);
@@ -6360,6 +6618,21 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
 
   /* at this point, DL is >= 0x80 to be passed from the floppy int13h
      handler code */
+#ifdef BOCHS_ORIGINAL	 
+  /* check how many disks first (cmos reg 0x12), return an error if
+     drive not present */
+  drive_map = inb_cmos(0x12);
+  drive_map = (((drive_map & 0xf0)==0) ? 0 : 1) |
+              (((drive_map & 0x0f)==0) ? 0 : 2);
+  n_drives = (drive_map==0) ? 0 : ((drive_map==3) ? 2 : 1);
+
+  if (!(drive_map & (1<<(GET_ELDL()&0x7f)))) { /* allow 0, 1, or 2 disks */
+    SET_AH(0x01);
+    SET_DISK_RET_STATUS(0x01);
+    SET_CF(); /* error occurred */
+    return;
+  }
+#else
   error = 0;
   drive = GET_ELDL();
   if(drive<0x80 || drive>=(0x80+BX_MAX_ATA_DEVICES)) error = 1;
@@ -6379,7 +6652,7 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
   {
      if(read_byte_DS(&EbdaData->ata.devices[drive].type) == ATA_TYPE_ATA) n_drives++;
   }
-
+#endif // BOCHS_ORIGINAL
   switch (GET_AH()) {
 
     case 0x00: /* disk controller reset */
@@ -6873,6 +7146,36 @@ get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
   Bit8u hd_type;
   Bit16u cylinders;
   Bit8u iobase;
+#ifdef BOCHS_ORIGINAL
+  if (drive == 0x80) {
+    hd_type = inb_cmos(0x12) & 0xf0;
+    if (hd_type != 0xf0)
+      BX_INFO(panic_msg_reg12h,0);
+    hd_type = inb_cmos(0x19); // HD0: extended type
+    if (hd_type != 47)
+      BX_INFO(panic_msg_reg19h,0,0x19);
+    iobase = 0x1b;
+  } else {
+    hd_type = inb_cmos(0x12) & 0x0f;
+    if (hd_type != 0x0f)
+      BX_INFO(panic_msg_reg12h,1);
+    hd_type = inb_cmos(0x1a); // HD1: extended type
+    if (hd_type != 47)
+      BX_INFO(panic_msg_reg19h,0,0x1a);
+    iobase = 0x24;
+  }
+
+  // cylinders
+  LOBYTE(cylinders) = inb_cmos(iobase);
+  HIBYTE(cylinders) = inb_cmos(iobase+1);
+  write_word_SS(hd_cylinders, cylinders);
+
+  // heads
+  write_byte_SS(hd_heads, inb_cmos(iobase+2));
+
+  // sectors per track
+  write_byte_SS(hd_sectors, inb_cmos(iobase+8));
+#else
   Bit8u device;
   
   *hd_cylinders = 0;
@@ -6887,6 +7190,7 @@ get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
   *hd_cylinders = read_word_DS(&EbdaData->ata.devices[device].pchs.cylinders);
   *hd_heads     = read_word_DS(&EbdaData->ata.devices[device].pchs.heads);
   *hd_sectors   = read_word_DS(&EbdaData->ata.devices[device].pchs.spt);
+#endif // BOCHS_ORIGINAL
 }
 
 #endif //else BX_USE_ATADRV
@@ -9452,16 +9756,19 @@ bios32_entry_point:
   in  eax, dx
 #ifdef PCI_FIXED_HOST_BRIDGE
   cmp eax, #PCI_FIXED_HOST_BRIDGE
-  je pci_found
+  je  pci_found
+#endif
 #ifdef PCI_FIXED_HOST_BRIDGE2
   cmp eax, #PCI_FIXED_HOST_BRIDGE2
-  jne unknown_service
+  je  pci_found
 #endif
-#else
+#ifdef PCI_FIXED_HOST_BRIDGE3
+  cmp eax, #PCI_FIXED_HOST_BRIDGE3
+  je  pci_found
+#endif
   ;; say ok if a device is present
   cmp eax, #0xffffffff
   je unknown_service
-#endif
 pci_found:
   mov ebx, #0x000f0000
   mov ecx, #0x10000
@@ -9486,7 +9793,7 @@ pcibios_protected:
   cmp al, #0x01 ;; installation check
   jne pci_pro_f02
   mov bx, #0x0210
-  mov cx, #0
+  call pci_pro_get_max_bus ;; sets CX
   mov edx, #0x20494350 ;; "PCI "
   mov al, #0x01
   jmp pci_pro_ok
@@ -9508,7 +9815,7 @@ pci_pro_devloop:
   dec si
 pci_pro_nextdev:
   inc bx
-  cmp bx, #0x0100
+  cmp bx, #0x0200
   jne pci_pro_devloop
   mov ah, #0x86
   jmp pci_pro_fail
@@ -9529,7 +9836,7 @@ pci_pro_devloop2:
   dec si
 pci_pro_nextdev2:
   inc bx
-  cmp bx, #0x0100
+  cmp bx, #0x0200
   jne pci_pro_devloop2
   mov ah, #0x86
   jmp pci_pro_fail
@@ -9623,6 +9930,23 @@ pci_pro_ok:
   clc
   retf
 
+pci_pro_get_max_bus:
+  push eax
+  mov  eax, #0x80000000
+  mov  dx, #0x0cf8
+  out  dx, eax
+  mov  dx, #0x0cfc
+  in   eax, dx
+  mov  cx, #0
+#ifdef PCI_FIXED_HOST_BRIDGE3
+  cmp  eax, #PCI_FIXED_HOST_BRIDGE3
+  jne  pci_pro_no_i440bx
+  mov  cx, #0x0001
+#endif
+pci_pro_no_i440bx:
+  pop  eax
+  ret
+
 pci_pro_select_reg:
   push edx
   mov eax, #0x800000
@@ -9649,15 +9973,18 @@ pcibios_real:
 #ifdef PCI_FIXED_HOST_BRIDGE
   cmp eax, #PCI_FIXED_HOST_BRIDGE
   je  pci_present
+#endif
 #ifdef PCI_FIXED_HOST_BRIDGE2
   cmp eax, #PCI_FIXED_HOST_BRIDGE2
   je  pci_present
 #endif
-#else
+#ifdef PCI_FIXED_HOST_BRIDGE3
+  cmp eax, #PCI_FIXED_HOST_BRIDGE3
+  je  pci_present
+#endif
   ;; say ok if a device is present
   cmp eax, #0xffffffff
   jne  pci_present
-#endif
   pop dx
   pop eax
   mov ah, #0xff
@@ -9670,7 +9997,7 @@ pci_present:
   jne pci_real_f02
   mov ax, #0x0001
   mov bx, #0x0210
-  mov cx, #0
+  call pci_real_get_max_bus ;; sets CX
   mov edx, #0x20494350 ;; "PCI "
   mov edi, #0xf0000
   mov di, #pcibios_protected
@@ -9696,7 +10023,7 @@ pci_real_devloop:
   dec si
 pci_real_nextdev:
   inc bx
-  cmp bx, #0x0100
+  cmp bx, #0x0200
   jne pci_real_devloop
   mov dx, cx
   shr ecx, #16
@@ -9719,7 +10046,7 @@ pci_real_devloop2:
   dec si
 pci_real_nextdev2:
   inc bx
-  cmp bx, #0x0100
+  cmp bx, #0x0200
   jne pci_real_devloop2
   mov dx, cx
   shr ecx, #16
@@ -9840,6 +10167,23 @@ pci_real_ok:
   clc
   ret
 
+pci_real_get_max_bus:
+  push eax
+  mov  eax, #0x80000000
+  mov  dx, #0x0cf8
+  out  dx, eax
+  mov  dx, #0x0cfc
+  in   eax, dx
+  mov  cx, #0
+#ifdef PCI_FIXED_HOST_BRIDGE3
+  cmp  eax, #PCI_FIXED_HOST_BRIDGE3
+  jne  pci_real_no_i440bx
+  mov  cx, #0x0001
+#endif
+pci_real_no_i440bx:
+  pop  eax
+  ret
+
 pci_real_select_reg:
   push dx
   mov eax, #0x800000
@@ -9919,7 +10263,7 @@ pci_routing_table_structure_start:
   dw 0xdef8 ;; IRQ bitmap INTD#
   db 3 ;; physical slot (0 = embedded)
   db 0 ;; reserved
-  ;; 5th slot entry: 4rd PCI slot
+  ;; 5th slot entry: 4th PCI slot
   db 0 ;; pci bus number
   db 0x28 ;; pci device number (bit 7-3)
   db 0x60 ;; link value INTA#
@@ -9932,7 +10276,7 @@ pci_routing_table_structure_start:
   dw 0xdef8 ;; IRQ bitmap INTD#
   db 4 ;; physical slot (0 = embedded)
   db 0 ;; reserved
-  ;; 6th slot entry: 5rd PCI slot
+  ;; 6th slot entry: 5th PCI slot
   db 0 ;; pci bus number
   db 0x30 ;; pci device number (bit 7-3)
   db 0x61 ;; link value INTA#
@@ -10035,7 +10379,7 @@ enable_iomem_space:
   call pcibios_init_sel_reg
   mov  dx, #0x0cfc
   in   al, dx
-  or   al, #0x07
+  or   al, #0x03
   out  dx, al
 next_pci_dev:
   mov  byte ptr[bp-8], #0x10
@@ -10402,11 +10746,26 @@ pnpbios_real:
 pnpbios_code:
   mov  ax, 8[ebp]
   cmp  ax, #0x60 ;; Get Version and Installation Check
+  jnz  pnpbios_00
+  push es
+  push di
+  les  di, 10[ebp]
+  mov  ax, #0x0101
+  stosw
+  pop  di
+  pop  es
+  xor  ax, ax ;; SUCCESS
+  jmp  pnpbios_exit
+pnpbios_00:
+  cmp  ax, #0x00 ;; Get Number of System Device Nodes
   jnz  pnpbios_fail
   push es
   push di
-  les  di, 10[bp]
-  mov  ax, #0x0101
+  les  di, 10[ebp]
+  mov  al, #0x00
+  stosb
+  les  di, 14[ebp]
+  mov  ax, #0x0000
   stosw
   pop  di
   pop  es
@@ -10881,6 +11240,17 @@ normal_post:
   mov  ax, #0xc780
   call rom_scan
 
+  ;; Hack fix: SeaVGABIOS does not setup a video mode
+  mov  dx, #0x03d4
+  mov  al, #0x00
+  out  dx, al
+  inc  dx
+  in   al, dx
+  test al, al
+  jnz  vga_init_ok
+  mov  ax, #0x0003
+  int  #0x10
+vga_init_ok:
   call _print_bios_banner
 
   ;;
@@ -10917,7 +11287,11 @@ normal_post:
   mov  cx, #0xc800  ;; init option roms
   mov  ax, #0xe000
   call rom_scan
-
+#ifdef BOCHS_ORIGINAL
+#if BX_ELTORITO_BOOT
+  call _interactive_bootkey
+#endif // BX_ELTORITO_BOOT
+#endif // BOCHS_ORIGINAL
   sti        ;; enable interrupts
   int  #0x19
 
@@ -11120,15 +11494,16 @@ int09_handler:
   out PORT_PIC1_CMD, al
   in  al, PORT_PIC1_CMD
   and al, #0x02
+  // jz  int09_finish  // MiSTer: fix cli/sti in keyboard int handler.
 
   in  al, PORT_PS2_DATA             ;;read key from keyboard controller
   sti
 
-  jz  int09_finish
+  jz  int09_finish	// MiSTer: fix cli/sti in keyboard int handler.
 
   push  ds
   pusha
-#if BX_CALL_INT15_4F
+#ifdef BX_CALL_INT15_4F
   mov  ah, #0x4f     ;; allow for keyboard intercept
   stc
   int  #0x15
@@ -11214,7 +11589,7 @@ int13_diskette:
 int0e_handler:
   push ax
   push dx
-  mov  ax, #0xc0 // win98 disables FDC ports! needs default value.
+  mov  ax, #0xc0 // MiSTer: win98 disables FDC ports! needs default value.
   mov  dx, #0x03f4
   in   al, dx
   and  al, #0xc0
@@ -11351,6 +11726,16 @@ int11_handler:
 ;----------
 .org 0xf859 ; INT 15h System Services Entry Point
 int15_handler:
+  cmp ah, #0x80 ; Device open
+  je int15_stub
+  cmp ah, #0x81 ; Device close
+  je int15_stub
+  cmp ah, #0x82 ; Program termination
+  je int15_stub
+  cmp ah, #0x90 ; Device busy interrupt. Called by Int 16h when no key available
+  je int15_stub
+  cmp ah, #0x91 ; Interrupt complete. Called by IRQ handlers
+  je int15_stub
   pushf
 #if BX_APM
   cmp ah, #0x53
@@ -11379,6 +11764,10 @@ int15_handler32_ret:
 apm_call:
   jmp _apmreal_entry
 #endif
+int15_stub:
+  xor ah, ah ; "operation success"
+  clc
+  jmp iret_modify_cf
 
 #if BX_USE_PS2_MOUSE
 int15_handler_mouse:
@@ -11485,9 +11874,9 @@ int08_handler:
   ;; turn motor(s) off
   push dx
   mov  dx,#0x03f2
-  xor  al,al // don't trigger win98 trap here
+  xor  al,al // MiSTer: don't trigger win98 trap here
   in   al,dx
-  and  al,#0x0f
+  and  al,#0x0f	// MiSTER: fix compatibility with win9x driver
   out  dx,al
   pop  dx
 int08_floppy_off:
