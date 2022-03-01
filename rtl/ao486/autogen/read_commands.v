@@ -207,7 +207,7 @@ wire cond_168 = rd_cmd == `CMD_PUSH && rd_cmdex == `CMDEX_PUSH_implicit;
 wire cond_169 = rd_cmd == `CMD_PUSH && rd_cmdex == `CMDEX_PUSH_modregrm;
 wire cond_170 = rd_cmd == `CMD_INT_INTO && rd_cmdex == `CMDEX_INT_INTO_INTO_STEP_0;
 wire cond_171 = rd_mutex_busy_eflags;
-wire cond_172 = rd_cmd == `CMD_CPUID;
+// Experimenting with removing CPUID -- wire cond_172 = rd_cmd == `CMD_CPUID;
 wire cond_173 = rd_cmd == `CMD_IN && rd_cmdex != `CMDEX_IN_idle;
 wire cond_174 = rd_in_condition;
 wire cond_175 = ~(io_allow_check_needed) || rd_cmdex == `CMDEX_IN_protected;
@@ -462,7 +462,7 @@ assign rd_req_eax =
     (cond_150)? (`TRUE) :
     (cond_162 && ~cond_38 && cond_39)? (`TRUE) :
     (cond_163)? (`TRUE) :
-    (cond_172)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_172)? (`TRUE) :
     (cond_213 && cond_214)? (`TRUE) :
     (cond_221)? ( rd_cmd != `CMD_CWD) :
     (cond_226)? (`TRUE) :
@@ -798,7 +798,7 @@ assign rd_dst_is_rm =
     (cond_254)? (`TRUE) :
     1'd0;
 assign rd_req_edx =
-    (cond_172)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_172)? (`TRUE) :
     (cond_221)? ( rd_cmd == `CMD_CWD) :
     1'd0;
 assign rd_src_is_io =
@@ -1077,7 +1077,7 @@ assign rd_waiting =
     (cond_169 && cond_3 && cond_9)? (`TRUE) :
     (cond_169 && cond_3 && ~cond_9 && cond_5)? (`TRUE) :
     (cond_170 && cond_171)? (`TRUE) :
-    (cond_172 && cond_68)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_172 && cond_68)? (`TRUE) :
     (cond_173 && cond_174)? (`TRUE) :
     (cond_173 && ~cond_174 && cond_175 && cond_176)? (`TRUE) :
     (cond_177 && cond_1 && cond_8)? (`TRUE) :
@@ -1183,7 +1183,7 @@ assign address_stack_for_iret_first =
     1'd0;
 assign rd_req_ecx =
     (cond_153)? (`TRUE) :
-    (cond_172)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_172)? (`TRUE) :
     1'd0;
 assign read_rmw_system_dword =
     (cond_227 && ~cond_16 && cond_228 && ~cond_9)? (`TRUE) :
@@ -1384,7 +1384,7 @@ assign address_stack_for_call_param_first =
     (cond_22 && cond_26)? (`TRUE) :
     1'd0;
 assign rd_req_ebx =
-    (cond_172)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_172)? (`TRUE) :
     1'd0;
 assign address_ea_buffer_plus_2 =
     (cond_121)? (`TRUE) :

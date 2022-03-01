@@ -228,7 +228,7 @@ assign dec_cmd =
     (cond_94 && ~cond_4)? ( `CMD_PUSH) :
     (cond_95 && ~cond_4)? ( `CMD_PUSH) :
     (cond_96 && ~cond_4)? ( `CMD_INT_INTO) :
-    (cond_98 && ~cond_4)? ( `CMD_CPUID) :
+// Experimenting with removing CPUID --    (cond_98 && ~cond_4)? ( `CMD_CPUID) :
     (cond_99 && ~cond_4)? ( `CMD_IN) :
     (cond_102 && ~cond_1)? ( `CMD_NOT) :
     (cond_103 && ~cond_14)? ( `CMD_VERR) :
@@ -705,7 +705,7 @@ assign dec_cmdex =
     (cond_94 && ~cond_4 && ~cond_56)? ( `CMDEX_PUSH_immediate) :
     (cond_95 && ~cond_4)? ( `CMDEX_PUSH_modregrm) :
     (cond_96 && ~cond_4)? ( (decoder[2:0] == 3'b100)? `CMDEX_INT_INTO_INT3_STEP_0 : (decoder[2:0] == 3'b101)? `CMDEX_INT_INTO_INT_STEP_0 : (decoder[2:0] == 3'b110)? `CMDEX_INT_INTO_INTO_STEP_0 : `CMDEX_INT_INTO_INT1_STEP_0) :
-    (cond_98 && ~cond_4)? ( `CMDEX_CPUID_STEP_LAST) :
+// Experimenting with removing CPUID --    (cond_98 && ~cond_4)? ( `CMDEX_CPUID_STEP_LAST) :
     (cond_99 && ~cond_4 && cond_100)? ( `CMDEX_IN_dx) :
     (cond_99 && ~cond_4 && ~cond_100)? ( `CMDEX_IN_imm) :
     (cond_103 && ~cond_14)? ( `CMDEX_LAR_LSL_VERR_VERW_STEP_1) :

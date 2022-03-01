@@ -235,7 +235,7 @@ wire cond_211 =
 (mc_cmd == `CMD_RET_far && mc_cmdex_last == `CMDEX_RET_far_same_STEP_4) ||
 (mc_cmd == `CMD_RET_far && mc_cmdex_last == `CMDEX_RET_far_outer_STEP_7) ||
 (mc_cmd == `CMD_LODS && mc_cmdex_last == `CMDEX_LODS_STEP_0) ||
-(mc_cmd == `CMD_CPUID && mc_cmdex_last == `CMDEX_CPUID_STEP_LAST) ||
+// Experimenting with removing CPUID --(mc_cmd == `CMD_CPUID && mc_cmdex_last == `CMDEX_CPUID_STEP_LAST) ||
 (mc_cmd == `CMD_IN && mc_cmdex_last == `CMDEX_IN_idle) ||
 (mc_cmd == `CMD_STOS && mc_cmdex_last == `CMDEX_STOS_STEP_0) ||
 (mc_cmd == `CMD_OUTS && mc_cmdex_last == `CMDEX_OUTS_protected) ||

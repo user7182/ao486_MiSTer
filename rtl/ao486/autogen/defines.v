@@ -79,7 +79,7 @@
 `define CMDEX_TEST_modregrm 4'd1
 `define CMD_LGDT 7'd47
 `define CMD_MUL 7'd59
-`define CMD_CPUID 7'd76
+// Experimenting with removing CPUID --`define CMD_CPUID 7'd76
 `define CMDEX_ENTER_LOOP 4'd3
 `define CMDEX_RET_far_same_STEP_3 4'd4
 `define CMDEX_RET_far_same_STEP_4 4'd5
@@ -213,7 +213,7 @@
 `define CMDEX_PUSHA_STEP_3 4'd3
 `define CMDEX_PUSHA_STEP_4 4'd4
 `define CMDEX_PUSHA_STEP_5 4'd5
-`define CMDEX_CPUID_STEP_LAST 4'd0
+// Experimenting with removing CPUID --`define CMDEX_CPUID_STEP_LAST 4'd0
 `define CMDEX_PUSHA_STEP_6 4'd6
 `define CMDEX_PUSHA_STEP_7 4'd7
 `define CMD_DAS 7'd115

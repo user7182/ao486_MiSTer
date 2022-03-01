@@ -187,7 +187,7 @@ wire cond_160 = wr_cmd == `CMD_INT_INTO && wr_cmdex == `CMDEX_INT_INTO_INT3_STEP
 wire cond_161 = wr_cmd == `CMD_INT_INTO && wr_cmdex == `CMDEX_INT_INTO_INT1_STEP_0;
 wire cond_162 = wr_cmd == `CMD_INT_INTO && wr_cmdex == `CMDEX_INT_INTO_INTO_STEP_0;
 wire cond_163 = oflag;
-wire cond_164 = wr_cmd == `CMD_CPUID;
+// Experimenting with removing CPUID --wire cond_164 = wr_cmd == `CMD_CPUID;
 wire cond_165 = eax == 32'd0;
 wire cond_166 = eax != 32'd0;
 wire cond_167 = wr_cmd == `CMD_IN;
@@ -448,8 +448,8 @@ assign ss_to_reg =
     (cond_240)? (                task_ss) :
     ss;
 assign ebx_to_reg =
-    (cond_164 && cond_165)? ( "TSiM") :
-    (cond_164 && cond_166)? ( 32'h00010000) :
+// Experimenting with removing CPUID -- (cond_164 && cond_165)? ( "uneG") :
+// Experimenting with removing CPUID -- (cond_164 && cond_166)? ( 32'h00010000) :
     (cond_240)? ( (glob_descriptor[`DESC_BITS_TYPE] <= 4'd3)? { 16'hFFFF, exe_buffer_shifted[255:240] } : exe_buffer_shifted[271:240]) :
     (cond_263 && cond_264)? ( { wr_operand_16bit? ebx[31:16] : exe_buffer_shifted[95:80],   exe_buffer_shifted[79:64] }) :
     ebx;
@@ -560,8 +560,8 @@ assign eax_to_reg =
     (cond_142 && cond_134)? ( (wr_is_8bit || wr_operand_16bit)? { eax[31:16], result[15:0] } : result) :
     (cond_152 && cond_33)? ( (wr_is_8bit)? { eax[31:8], result2[7:0] } : (wr_operand_16bit)? { eax[31:16], result2[15:0] } : result2) :
     (cond_155)? ( (wr_operand_16bit)? { eax[31:16], result2[15:0] } : result2) :
-    (cond_164 && cond_165)? ( 32'd1) :
-    (cond_164 && cond_166)? ( `CPUID_MODEL_FAMILY_STEPPING) :
+// Experimenting with removing CPUID --    (cond_164 && cond_165)? ( 32'd1) :
+// Experimenting with removing CPUID --    (cond_164 && cond_166)? ( `CPUID_MODEL_FAMILY_STEPPING) :
     (cond_167 && cond_168)? ( (wr_is_8bit)? { eax[31:8], result2[7:0] } : (wr_operand_16bit)? { eax[31:16], result2[15:0] } : result2) :
     (cond_213)? ( { eax[31:16], sflag, zflag, 1'b0, aflag, 1'b0, pflag, 1'b1, cflag, eax[7:0] }) :
     (cond_214 && cond_83)? ( { {16{eax[15]}}, eax[15:0] }) :
@@ -657,8 +657,8 @@ assign edx_to_reg =
     (cond_100 && cond_101)? ( (wr_operand_16bit)? { edx[31:16], result[31:16] } : result2) :
     (cond_133 && cond_134 && cond_101)? ( (wr_operand_16bit)? { edx[31:16], result[31:16] } : result2) :
     (cond_142 && cond_134 && cond_101)? ( (wr_operand_16bit)? { edx[31:16], result[31:16] } : result2) :
-    (cond_164 && cond_165)? ( "A re") :
-    (cond_164 && cond_166)? ( 32'd0) :
+// Experimenting with removing CPUID -- (cond_164 && cond_165)? ( "Ieni") :
+// Experimenting with removing CPUID -- (cond_164 && cond_166)? ( 32'd0) :
     (cond_215 && cond_83)? ( {32{eax[31]}}) :
     (cond_215 && ~cond_83)? ( { edx[31:16], {16{eax[15]}} }) :
     (cond_240)? ( (glob_descriptor[`DESC_BITS_TYPE] <= 4'd3)? { 16'hFFFF, exe_buffer_shifted[287:272] } : exe_buffer_shifted[303:272]) :
@@ -776,8 +776,8 @@ assign ecx_to_reg =
     (cond_143 && cond_144)? ( { ecx[31:16], wr_ecx_minus_1[15:0] }) :
     (cond_143 && ~cond_144)? ( wr_ecx_minus_1) :
     (cond_152 && cond_33 && cond_34)? ( wr_ecx_final) :
-    (cond_164 && cond_165)? ( "684O") :
-    (cond_164 && cond_166)? ( 32'd0) :
+// Experimenting with removing CPUID -- (cond_164 && cond_165)? ( "letn") :
+// Experimenting with removing CPUID -- (cond_164 && cond_166)? ( 32'd0) :
     (cond_192 && cond_33 && ~cond_9 && cond_34)? ( wr_ecx_final) :
     (cond_196 && ~cond_197 && cond_33 && ~cond_9 && cond_34)? ( wr_ecx_final) :
     (cond_199 && ~cond_200 && cond_33 && ~cond_201 && cond_34)? ( wr_ecx_final) :
@@ -1335,7 +1335,7 @@ assign wr_req_reset_rd =
     (cond_149)? (`TRUE) :
     (cond_152 && cond_153)? (`TRUE) :
     (cond_162 && ~cond_163)? (`TRUE) :
-    (cond_164)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_164)? (`TRUE) :
     (cond_167 && cond_168)? (`TRUE) :
     (cond_178)? (`TRUE) :
     (cond_182)? (`TRUE) :
@@ -1498,7 +1498,7 @@ assign wr_req_reset_exe =
     (cond_149)? (`TRUE) :
     (cond_152 && cond_153)? (`TRUE) :
     (cond_162 && ~cond_163)? (`TRUE) :
-    (cond_164)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_164)? (`TRUE) :
     (cond_167 && cond_168)? (`TRUE) :
     (cond_178)? (`TRUE) :
     (cond_182)? (`TRUE) :
@@ -1591,7 +1591,7 @@ assign wr_req_reset_micro =
     (cond_149)? (`TRUE) :
     (cond_152 && cond_153)? (`TRUE) :
     (cond_162 && ~cond_163)? (`TRUE) :
-    (cond_164)? (`TRUE) :
+// Experimenting with removing CPUID --    (cond_164)? (`TRUE) :
     (cond_167 && cond_168)? (`TRUE) :
     (cond_178)? (`TRUE) :
     (cond_182)? (`TRUE) :
