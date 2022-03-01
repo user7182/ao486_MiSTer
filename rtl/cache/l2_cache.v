@@ -300,7 +300,7 @@ always @(posedge CLK) begin
 								end
 							end
 						end
-						else if (CPU_WE & (~rom_rgn | shr_rgn) & ram_rgn) begin  // Allow write access for SeaBIOS experimentation
+						else if (CPU_WE /*& (~rom_rgn | shr_rgn)*/ & ram_rgn) begin  // Allow write access for SeaBIOS experimentation
 							if (vga_rgn) begin
 								if(VGA_FB_EN) begin
 									ram_addr[24:13]  <= {6'b111110, VGA_WR_SEG};
