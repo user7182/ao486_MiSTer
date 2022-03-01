@@ -2180,6 +2180,13 @@ void
 log_bios_start()
 {
 #if BX_DEBUG_SERIAL
+  // MiSTer
+  //    \/
+   outb(BX_DEBUG_PORT + 3, 0x80);    // Enable DLAB (set baud rate divisor)
+   outb(BX_DEBUG_PORT + 0, 0x03);    // Set divisor to 3 (lo byte) 38400 baud
+   outb(BX_DEBUG_PORT + 1, 0x00);    //                  (hi byte)
+  //    /\
+  // MiSTer
   outb(BX_DEBUG_PORT+UART_LCR, 0x03); /* setup for serial logging: 8N1 */
 #endif
   BX_INFO("%s\n", bios_cvs_version_string);

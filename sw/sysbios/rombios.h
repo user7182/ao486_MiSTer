@@ -27,17 +27,17 @@
 #  define BX_ROMBIOS32     0
 #endif
 
-#define DEBUG_ROMBIOS    0
-#define DEBUG_ATA          0
+#define DEBUG_ROMBIOS      1
+#define DEBUG_ATA          1
 #define DEBUG_INT13_HD     0
 #define DEBUG_INT13_CD     0
 #define DEBUG_INT13_ET     0
 #define DEBUG_INT13_FL     0
-#define DEBUG_INT15        0
-#define DEBUG_INT16        0
-#define DEBUG_INT1A        0
-#define DEBUG_INT74        0
-#define DEBUG_APM          0
+#define DEBUG_INT15        1
+#define DEBUG_INT16        1
+#define DEBUG_INT1A        1
+#define DEBUG_INT74        1
+#define DEBUG_APM          1
 
 #define PANIC_PORT  0x8888 //ao 0x400
 #define PANIC_PORT2 0x8888 //ao 0x401
@@ -108,7 +108,7 @@
 #define BX_MAX_ATA_DEVICES      (BX_MAX_ATA_INTERFACES*2)
 
 #define BX_VIRTUAL_PORTS 0 //ao /* normal output to Bochs ports */
-#define BX_DEBUG_SERIAL  0 /* output to COM1 */
+#define BX_DEBUG_SERIAL  1 /* output to COM1 */
 
    /* model byte 0xFC = AT */
 #define SYS_MODEL_ID     0xFC
