@@ -184,7 +184,9 @@ always @(posedge CLK) begin
 end
    
 wire ram_rgn = !CPU_ADDR[29:ADDRBITS+2];
-wire rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 'hC)  || (CPU_ADDR[ADDRBITS+1:14] == 'hF);
+// Permitting the ROM region to be written to allow experimentation with SeaBIOS.
+// SeaBIOS stores static variables in the 'hF0000 region.
+// Allow write access -- wire rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 'hC)  || (CPU_ADDR[ADDRBITS+1:14] == 'hF);
 wire vga_rgn = (CPU_ADDR[ADDRBITS+1:15] == 'h5)  && ((CPU_ADDR[14:13] & vga_mask) == vga_cmp);
 wire shr_rgn = (CPU_ADDR[ADDRBITS+1:11] == 'h67) && shr_rgn_en;
 
@@ -298,7 +300,7 @@ always @(posedge CLK) begin
 								end
 							end
 						end
-						else if (CPU_WE & (~rom_rgn | shr_rgn) & ram_rgn) begin
+						else if (CPU_WE & (~rom_rgn | shr_rgn) & ram_rgn) begin  // Allow write access for SeaBIOS experimentation
 							if (vga_rgn) begin
 								if(VGA_FB_EN) begin
 									ram_addr[24:13]  <= {6'b111110, VGA_WR_SEG};
