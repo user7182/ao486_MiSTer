@@ -108,6 +108,7 @@ reg  [63:0] ram_din;
 reg   [7:0] ram_be;
 reg         ram_we;
 
+reg         bios_ram_locked;
 reg         shr_rgn_en;
 reg         read_behind;
 
@@ -182,13 +183,19 @@ always @(posedge CLK) begin
 			end
 	endcase
 end
-   
-wire ram_rgn = !CPU_ADDR[29:ADDRBITS+2];
-// Permitting the ROM region to be written to allow experimentation with SeaBIOS.
-// SeaBIOS stores static variables in the 'hF0000 region.
-// Allow write access -- wire rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 'hC)  || (CPU_ADDR[ADDRBITS+1:14] == 'hF);
-wire vga_rgn = (CPU_ADDR[ADDRBITS+1:15] == 'h5)  && ((CPU_ADDR[14:13] & vga_mask) == vga_cmp);
-wire shr_rgn = (CPU_ADDR[ADDRBITS+1:11] == 'h67) && shr_rgn_en;
+
+wire ram_rgn = !CPU_ADDR[29:ADDRBITS+2];	// Block writes to RAM in the range 256 MB to 4 GB.
+
+  // VGA ROM: hC_0000 
+wire vga_rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 12'h00C);
+  // BIOS: hF_0000 
+wire bios_rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 12'h00F);
+  // Only consider the BIOS and VGA ROM after bios_ram_locked has been set.
+wire rom_rgn = (vga_rom_rgn || bios_rom_rgn) && bios_ram_locked;
+  // VGA Framebuffer: hA_0000
+wire vga_rgn = (CPU_ADDR[ADDRBITS+1:14] == 12'h00A)  && ((CPU_ADDR[14:13] & vga_mask) == vga_cmp);
+  // MiSTer FS: hC_E000
+wire shr_rgn = (CPU_ADDR[ADDRBITS+1:10] == 16'h00CE) && shr_rgn_en;
 
 wire [7:0] be64 = CPU_ADDR[0] ? {CPU_BE, 4'h0} : {4'h0, CPU_BE};
 
@@ -208,6 +215,7 @@ always @(posedge CLK) begin
 		update_tag_we   <= 1'b1;
 		tags_dirty_in   <= {ASSOCIATIVITY{1'b1}};
 		shr_rgn_en      <= 1'b0;
+		bios_ram_locked <= 1'b0;
 		vgabusy         <= 1'b0;
 	end
 	else begin
@@ -232,7 +240,10 @@ always @(posedge CLK) begin
 			end
 		end
 
-		if (CPU_WE_1 && (CPU_ADDR_1 == 'h33800) && (CPU_DIN_1[15:0] == 'hA345)) shr_rgn_en <= 1'b1;
+		// Enable the MiSTer FS shared region when 0xA345 is written to hC_E000.
+		if (CPU_WE_1 && (CPU_ADDR_1 == ('hCE000 >> 2)) && (CPU_DIN_1[15:0] == 'hA345)) shr_rgn_en <= 1'b1;
+		// Unblock RAM writes to the BIOS region.
+		if (CPU_WE_1 && (CPU_ADDR_1 == ('hCE000 >> 2)) && (CPU_DIN_1[15:0] == 'h2346)) bios_ram_locked <= 1'b1;
 		
 		case (state)
 			
@@ -300,7 +311,10 @@ always @(posedge CLK) begin
 								end
 							end
 						end
-						else if (CPU_WE /*& (~rom_rgn | shr_rgn)*/ & ram_rgn) begin  // Allow write access for SeaBIOS experimentation
+						// Don't allow writes to the VGA ROM, up to the beginning of the MiSTer FS ('hC_E000)
+						//  or the BIOS ROM (after BIOS RAM has been locked)
+						//  or any addresses higher than 256 MB. 
+						else if (CPU_WE & (~rom_rgn | shr_rgn) & ram_rgn) begin
 							if (vga_rgn) begin
 								if(VGA_FB_EN) begin
 									ram_addr[24:13]  <= {6'b111110, VGA_WR_SEG};
