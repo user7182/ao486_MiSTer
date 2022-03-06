@@ -187,15 +187,15 @@ end
 wire ram_rgn = !CPU_ADDR[29:ADDRBITS+2];	// Block writes to RAM in the range 256 MB to 4 GB.
 
   // VGA ROM: hC_0000 
-wire vga_rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 12'h00C);
+wire vga_rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 'hC);
   // BIOS: hF_0000 
-wire bios_rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 12'h00F);
+wire bios_rom_rgn = (CPU_ADDR[ADDRBITS+1:14] == 'hF);
   // Only consider the BIOS and VGA ROM after bios_ram_locked has been set.
 wire rom_rgn = (vga_rom_rgn || bios_rom_rgn) && bios_ram_locked;
   // VGA Framebuffer: hA_0000
-wire vga_rgn = (CPU_ADDR[ADDRBITS+1:14] == 12'h00A)  && ((CPU_ADDR[14:13] & vga_mask) == vga_cmp);
+wire vga_rgn = (CPU_ADDR[ADDRBITS+1:15] == 'h5)  && ((CPU_ADDR[14:13] & vga_mask) == vga_cmp);
   // MiSTer FS: hC_E000
-wire shr_rgn = (CPU_ADDR[ADDRBITS+1:10] == 16'h00CE) && shr_rgn_en;
+wire shr_rgn = (CPU_ADDR[ADDRBITS+1:11] == 'h67) && shr_rgn_en;
 
 wire [7:0] be64 = CPU_ADDR[0] ? {CPU_BE, 4'h0} : {4'h0, CPU_BE};
 
