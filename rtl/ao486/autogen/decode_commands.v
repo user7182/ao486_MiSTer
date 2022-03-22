@@ -475,7 +475,7 @@ assign exception_ud =
     (cond_94 && cond_4)? (`TRUE) :
     (cond_95 && cond_4)? (`TRUE) :
     (cond_96 && cond_4)? (`TRUE) :
-    (cond_98 && cond_4)? (`TRUE) :
+    (cond_98) ? (`TRUE) :   // Experimenting with removing CPUID --
     (cond_99 && cond_4)? (`TRUE) :
     (cond_102 && cond_1)? (`TRUE) :
     (cond_103 && cond_14)? (`TRUE) :
