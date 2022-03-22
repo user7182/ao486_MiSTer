@@ -457,7 +457,7 @@ always @(posedge clk) begin if(rst_n == 1'b0) iopl   <= `STARTUP_IOPL;   else io
 always @(posedge clk) begin if(rst_n == 1'b0) ntflag <= `STARTUP_NTFLAG; else ntflag <= ntflag_to_reg; end
 always @(posedge clk) begin if(rst_n == 1'b0) vmflag <= `STARTUP_VMFLAG; else vmflag <= vmflag_to_reg; end
 always @(posedge clk) begin if(rst_n == 1'b0) acflag <= `STARTUP_ACFLAG; else acflag <= acflag_to_reg; end
-always @(posedge clk) begin if(rst_n == 1'b0) idflag <= `STARTUP_IDFLAG; else idflag <= idflag_to_reg; end
+// Experimenting with removing CPUID -- always @(posedge clk) begin if(rst_n == 1'b0) idflag <= `STARTUP_IDFLAG; else idflag <= idflag_to_reg; end
 
 always @(posedge clk) begin
     if(rst_n == 1'b0)       rflag <= `STARTUP_RFLAG;

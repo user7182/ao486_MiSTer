@@ -27,7 +27,7 @@
 `define STARTUP_EAX   32'd0
 `define STARTUP_EBX   32'd0
 `define STARTUP_ECX   32'd0
-`define STARTUP_EDX   `CPUID_MODEL_FAMILY_STEPPING
+`define STARTUP_EDX   32'd0  // Experimenting with removing CPUID - `CPUID_MODEL_FAMILY_STEPPING
 `define STARTUP_EBP   32'd0
 `define STARTUP_ESP   32'd0
 `define STARTUP_ESI   32'd0
@@ -60,7 +60,7 @@
 `define STARTUP_NTFLAG 1'b0
 `define STARTUP_VMFLAG 1'b0
 `define STARTUP_ACFLAG 1'b0
-`define STARTUP_IDFLAG 1'b0
+// Experimenting with removing CPUID -- `define STARTUP_IDFLAG 1'b0
 `define STARTUP_RFLAG  1'b0
 
 `define STARTUP_GDTR_BASE  32'd0

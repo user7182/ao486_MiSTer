@@ -67,7 +67,7 @@
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 
-`define CPUID_MODEL_FAMILY_STEPPING     32'h0000045B
+//`define CPUID_MODEL_FAMILY_STEPPING     32'h0000045B
 
 `define MC_PARAM_1_FLAG_NO_WRITE                13'd1
 `define MC_PARAM_1_FLAG_NO_WRITE_BIT            19

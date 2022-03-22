@@ -451,7 +451,7 @@ wire        ntflag_to_reg;
 wire        rflag_to_reg;
 wire        vmflag_to_reg;
 wire        acflag_to_reg;
-wire        idflag_to_reg;
+// Experimenting with removing CPUID -- wire        idflag_to_reg;
 wire [31:0] gdtr_base_to_reg;
 wire [15:0] gdtr_limit_to_reg;
 wire [31:0] idtr_base_to_reg;

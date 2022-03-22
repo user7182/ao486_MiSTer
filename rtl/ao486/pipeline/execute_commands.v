@@ -302,8 +302,8 @@ module execute_commands(
 wire [31:0] exe_push_eflags;
 wire [31:0] exe_pushf_eflags;
 
-assign exe_push_eflags   = { 10'b0,idflag,2'b0,acflag,vmflag,rflag,1'b0,ntflag,iopl,oflag,dflag,iflag,tflag,sflag,zflag,1'b0,aflag,1'b0,pflag,1'b1,cflag };
-assign exe_pushf_eflags  = { 10'b0,idflag,2'b0,acflag,1'b0,  1'b0, 1'b0,ntflag,iopl,oflag,dflag,iflag,tflag,sflag,zflag,1'b0,aflag,1'b0,pflag,1'b1,cflag };
+assign exe_push_eflags   = { 10'b0,1'b0 /*remove cpuid*/,2'b0,acflag,vmflag,rflag,1'b0,ntflag,iopl,oflag,dflag,iflag,tflag,sflag,zflag,1'b0,aflag,1'b0,pflag,1'b1,cflag };
+assign exe_pushf_eflags  = { 10'b0,1'b0 /*remove cpuid*/,2'b0,acflag,1'b0,  1'b0, 1'b0,ntflag,iopl,oflag,dflag,iflag,tflag,sflag,zflag,1'b0,aflag,1'b0,pflag,1'b1,cflag };
                          
 //------------------------------------------------------------------------------ descriptor load seg
 

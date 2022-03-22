@@ -861,6 +861,7 @@ assign cflag_to_reg =
     (cond_273)? ( result_signals[0]) :
     (cond_274 && ~cond_5)? ( cflag_arith) :
     cflag;
+/* Experimenting with removing CPUID 
 assign idflag_to_reg =
     (cond_82 && cond_83)? ( glob_param_3[21]) :
     (cond_87)? ( glob_param_3[21]) :
@@ -868,7 +869,7 @@ assign idflag_to_reg =
     (cond_93 && cond_83)? ( glob_param_5[21]) :
     (cond_216 && cond_83)? ( result2[21]) :
     (cond_240)? ( task_eflags[21]) :
-    idflag;
+    idflag; */
 //======================================================== always
 always @(posedge clk) begin
     if(rst_n == 1'b0) wr_task_rpl <= 2'd0;
