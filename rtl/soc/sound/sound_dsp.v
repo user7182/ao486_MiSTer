@@ -36,41 +36,69 @@ module sound_dsp
 	output reg        irq8,
 	output reg        irq16,
 
-	//io slave 0-Fh
+	// DSP I/O addresses (2x6h, 2xAh, 2xCh, 2xEh)
+	// ------------------------------------------
+	//  4 | Mixer port (not used in the DSP module)
+	//  5 | Mixer data port (not used in the DSP module)
+	//  6 | Reset the DSP (write only)
+	//  A | Read data (read only)
+	//  C | Write command (write, read)
+	//  E | Read buffer status (read only)
+	//  F | DSP 16-bit interrupt acknowledge
+	//
 	input       [3:0] io_address,
-	input             io_read,
+	//     Read data port (2xAh, 2xEh)
+	input             io_read,          // Toggle to read port after selecting I/O address
 	output      [7:0] io_readdata,
-	input             io_write,
+	//     Write data port (2xCh)
+	input             io_write,         // Toggle to write port after selecting I/O address
 	input       [7:0] io_writedata,
 	
-	//dma
-	output            dma_req8,
-	output            dma_req16,
-	input             dma_ack,
-	input      [15:0] dma_readdata,
-	output     [15:0] dma_writedata,
-	input             dma_16_en,
-	input             sbp,
-	input             sbp_stereo,
+	// Direct Memory Access controller I/O
+	// ------------------------------------
+	output            dma_req8,         // Request the next byte from the DMA
+	output            dma_req16,        // Request the next 2-bytes from the DMA
+	input             dma_ack,          // DMA acknowledging the byte is available
+	input      [15:0] dma_readdata,     // Sample values to output to speaker
+	output     [15:0] dma_writedata,    // Sample values to input from microphone (dummy values)
+	
+	// Mixer Configuration Options
+	// ------------------------------------
+	input             dma_16_en,        // 16-bit DMA transfers enabled in the DMA select register (081h).
+	
+	//     On the AO486 different compatible modes can be selected by configuring
+	//     the mixer register for a specific IRQ.
+	//
+	//        Sound Blaster Pro (DSP v3.02) |	IRQ=5
+	//        Sound Blaster 16	 (DSP v4.05) | IRQ=7 or 10
+	//
+	input             sbp,              // Sound Blaster Pro mode enabled when the mixer configures IRQ=5
+	                                    //   in the IRQ select register (080h).
+	input             sbp_stereo,       // Stereo output mode enabled in the Output Register (00Eh).
 
-	//audio
-	output reg [15:0] sample_value_l,
-	output reg [15:0] sample_value_r
+	// Audio Output
+	// -------------
+	output reg [15:0] sample_value_l,   // Left
+	output reg [15:0] sample_value_r    // Right
 );
 
 //------------------------------------------------------------------------------
 
 reg io_read_last;
-always @(posedge clk) begin if(rst_n == 1'b0) io_read_last <= 1'b0; else if(io_read_last) io_read_last <= 1'b0; else io_read_last <= io_read; end 
-wire io_read_valid = io_read && io_read_last == 1'b0;
+always @(posedge clk) begin 
+	if(rst_n == 1'b0)     io_read_last <= 1'b0; 
+	else if(io_read_last) io_read_last <= 1'b0; 
+	else                  io_read_last <= io_read; 
+end 
+wire io_read_valid = io_read && io_read_last == 1'b0; // Decode the rising edge of the I/O read input bit.
 
 //------------------------------------------------------------------------------
 
 assign io_readdata =
-		(io_address == 4'hA) ? read_buffer[15:8] :
-		(io_address == 4'hC) ? {write_buffer_busy, 7'h7F } :
-		(io_address == 4'hE) ? {read_ready, 7'h7F } :
-                             8'hFF;
+		(io_address == 4'hA) ? read_buffer[15:8] :             // Read data port
+		(io_address == 4'hC) ? {write_buffer_busy, 7'h7F } :   // Write data port (Bit 7 is status) 
+		(io_address == 4'hE) ? {read_ready, 7'h7F } :          // Read buffer status
+                             8'hFF;                            // 
 
 //------------------------------------------------------------------------------
 
@@ -99,7 +127,7 @@ end
 
 wire highspeed_reset = io_write && io_address == 4'h6 &&  highspeed_mode;
 wire midi_uart_reset = io_write && io_address == 4'h6 && ~highspeed_mode &&  midi_uart_mode && reset_reg && ~io_writedata[0];
-wire sw_reset        = io_write && io_address == 4'h6 && ~highspeed_mode && ~midi_uart_mode && reset_reg && ~io_writedata[0];
+wire sw_reset        = io_write && io_address == 4'h6 && ~highspeed_mode && ~midi_uart_mode && reset_reg && ~io_writedata[0];	// Reset after seeing a write of 1, then followed by a 0.
 
 //------------------------------------------------------------------------------ dummy input
 
@@ -123,7 +151,7 @@ end
 
 assign dma_writedata = (dma_id_active) ? {dma_id_value,dma_id_value} : {input_sample,input_sample};
 
-//------------------------------------------------------------------------------
+//------------------------------------------------------------------------------ Write Command Port
 
 localparam [511:0] dsp_cmd_len = {
 	2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd2, 2'd1, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  2'd0, 2'd0, 2'd0, 2'd0,  // 0xf0
@@ -177,7 +205,7 @@ always @(posedge clk) begin
 	else if(cmd_cont)        write_left <= write_left - 2'd1;
 end
 
-reg [7:0] cmd_curr;
+reg [7:0] cmd_curr;	// Latch the received command
 always @(posedge clk) begin
 	if(rst_n == 1'b0)        cmd_curr <= 8'd0;
 	else if(sw_reset)        cmd_curr <= 8'd0;
@@ -189,6 +217,7 @@ always @(posedge clk) begin
 	if(rst_n == 1'b0)        write_buffer <= 24'd0;
 	else if(sw_reset)        write_buffer <= 24'd0;
 	else if(cmd_start)       write_buffer <= 24'd0;
+	// Save any parameters included in the command on each continue signal.
 	else if(cmd_cont)        write_buffer <= { write_buffer[15:0], io_writedata };
 end
 
@@ -431,15 +460,17 @@ always @(posedge clk) begin
 	else if(ce_smp && pause_period)         pause_period <= pause_period + 1'd1;
 end
 
-reg [7:0] period;
+//------------------------------------------------------------------------------ sample rate
+reg [7:0] period;		// Configured Time Constant
 always @(posedge clk) begin
 	if(rst_n == 1'b0)                       period <= 128;
 	else if(sw_reset)                       period <= 128;
+	// Only the high byte of the calculated time constant is received in the command.
 	else if(cmd_set_time_constant)          period <= write_buffer[7:0];
 	else if(cmd_set_sample_rate)            period <= 255;
 end
 
-reg ce_smp;
+reg ce_smp;				// Derived sample rate clock based on the clk frequency
 always @(posedge clk) begin
 	reg [27:0] sum = 0;
 
@@ -451,8 +482,9 @@ always @(posedge clk) begin
 	end
 end
 
-reg [27:0] clk_smp;
+reg [27:0] clk_smp;	// Configured Sample Rate
 always @(posedge clk) begin
+// When setting the period, dma_wait they are based on a time constant using 1us.
 	if(!rst_n || sw_reset || cmd_set_time_constant) clk_smp <= 1000000;
 	else if(cmd_set_sample_rate)                    clk_smp <= write_buffer[15:0];
 end
@@ -466,17 +498,18 @@ always @(posedge clk) begin
 	else if(io_read_valid && io_address == 4'hE)                                  irq8 <= 1'b0;
 end
 
-// timeout for some games
+// A timeout to clear the irq8 signal after 255 clock cycles of receiving request to trigger the interrupt.
+// This is a fix for some games.
 reg trg_irq8;
 always @(posedge clk) begin
 	reg [7:0] cnt;
 	
 	trg_irq8 <= &cnt;
-	if(cnt) cnt <= cnt + 1'd1;
+	if(cnt) cnt <= cnt + 1'd1; // Keep incrementing the counter until it rolls over to 0.
 
 	if(~rst_n || sw_reset)                               cnt <= 8'b0;
 	else if(cmd_trigger_irq8)                            cnt <= 8'b1;
-	else if(io_read_valid && io_address == 4'hE && irq8) cnt <= 8'b0;
+	else if(io_read_valid && io_address == 4'hE && irq8) cnt <= 8'b0;  // Stop counting if the interrupt is cleared.
 end
 
 always @(posedge clk) begin
@@ -545,18 +578,21 @@ always @(posedge clk) begin
 	else if(cmd_new_single_input)               dma_command <= S_IN_SINGLE_NEW;
 	else if(cmd_new_auto_input)                 dma_command <= S_IN_AUTO_NEW;
 
+	// dma_command will hold the pending command until it eventually executes and then is cleared by setting command back to idle.
 	else if(dma_single_start || dma_auto_start) dma_command <= S_IDLE;
 end
 
 //------------------------------------------------------------------------------ dma
 
-wire dma_single_start = dma_restart_possible && (
+wire dma_single_start_pending = (
     dma_command == S_OUT_SINGLE_8_BIT || dma_command == S_OUT_SINGLE_4_BIT     || dma_command == S_OUT_SINGLE_3_BIT     || dma_command == S_OUT_SINGLE_2_BIT     ||
                                          dma_command == S_OUT_SINGLE_4_BIT_REF || dma_command == S_OUT_SINGLE_3_BIT_REF || dma_command == S_OUT_SINGLE_2_BIT_REF ||
     dma_command == S_IN_SINGLE ||
     dma_command == S_OUT_SINGLE_HIGH || dma_command == S_IN_SINGLE_HIGH ||
 	 dma_command == S_OUT_SINGLE_NEW  || dma_command == S_IN_SINGLE_NEW
 );
+wire dma_single_start_cancel = dma_in_progress && dma_single_start_pending;
+wire dma_single_start = dma_restart_possible && dma_single_start_pending;
 
 wire dma_auto_start = dma_restart_possible && (
     dma_command == S_OUT_AUTO_8_BIT || dma_command == S_OUT_AUTO_4_BIT_REF || dma_command == S_OUT_AUTO_3_BIT_REF || dma_command == S_OUT_AUTO_2_BIT_REF ||
@@ -605,6 +641,7 @@ reg dma_in_progress;
 always @(posedge clk) begin
 	if(rst_n == 1'b0)                           dma_in_progress <= 1'b0;
 	else if(sw_reset)                           dma_in_progress <= 1'b0;
+	else if(dma_single_start_cancel)					    dma_in_progress <= 1'b0;	// TODO: only on sb16
 	else if(dma_single_start || dma_auto_start) dma_in_progress <= 1'b1;
 	else if(dma_finished)                       dma_in_progress <= 1'b0;
 end
@@ -634,7 +671,9 @@ reg [7:0] dma_wait;
 always @(posedge clk) begin
 	if(rst_n == 1'b0)                                                                         dma_wait <= 8'd0;
 	else if(sw_reset)                                                                         dma_wait <= 8'd0;
-	else if(dma_finished || dma_valid || adpcm_output || dma_single_start || dma_auto_start)  dma_wait <= period;
+	else if(dma_finished)     					  dma_wait <= 8'h0;
+	else if(dma_single_start || dma_auto_start)   dma_wait <= period;
+	else if(dma_valid || adpcm_output)            dma_wait <= period;
 	else if(~(pause_dma) && ce_smp && dma_wait)                                               dma_wait <= dma_wait + 1'd1;
 end
 
@@ -670,7 +709,7 @@ always @(posedge clk) begin
 	else if(!dma_in_progress)  dsp_busy_state <= S_WRITE_PORT_STATUS_IDLE;
 	else if(dma_wait == 8'hFF) dsp_busy_state <= S_WRITE_PORT_STATUS_IDLE;
 
-	// Stay busy for a single read, and then stay idle until a DMA request resets the state.
+	// Stay busy for a single read, and then stay idle until the next DMA request resets the state.
 	else if(dsp_fake_busy && write_port_status_reply) begin
 		dsp_busy_state <= dsp_busy_state + 1'd1;
 	end
@@ -898,7 +937,7 @@ wire [2:0] adpcm_4bit_step_next =
                                                             adpcm_step;
 
 //------------------------------------------------------------------------------
-
+// Used to select between ADPCM and PCM
 wire [15:0] sample =
     (adpcm_reference_output)?   {adpcm_sample, adpcm_sample} :
     (adpcm_active)?             {adpcm_active_value, adpcm_active_value} :
@@ -906,11 +945,13 @@ wire [15:0] sample =
 
 always @(posedge clk) begin
 	if((~speaker_on & sbp) | pause_active) begin
+	   // If the speaker isn't on, and this is a SoundBlaster Pro, or audio has been paused
+		// then play silence.
 		sample_value_l <= 0;
 		sample_value_r <= 0;
 	end
 	else if(sample_output && adpcm_type == ADPCM_NONE) begin
-		if(dma_format[2]) begin
+		if(dma_format[2]) begin	// dma_sbp_stereo, sbp_stereo/mono -- sound blaster pro
 			if(~sbp_lr) sample_value_l <= {sample_dma[0][15] ^ ~dma_format[0], sample_dma[0][14:0]};
 			else        sample_value_r <= {sample_dma[0][15] ^ ~dma_format[0], sample_dma[0][14:0]};
 		end
@@ -919,6 +960,7 @@ always @(posedge clk) begin
 			sample_value_r <= {sample_dma[dma_format[1]][15] ^ ~dma_format[0], sample_dma[dma_format[1]][14:0]};
 		end
 	end
+	// ADPCM
 	else if(cmd_direct_output | adpcm_active | (~adpcm_reference_awaiting & adpcm_reference_output)) begin
 		sample_value_l <= {~sample[15], sample[14:0]};
 		sample_value_r <= {~sample[15], sample[14:0]};
